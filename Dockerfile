@@ -4,8 +4,6 @@ WORKDIR /usr/src/evaluation-service
 
 COPY go.mod go.sum .env main.go evaluator.go sqs.go types.go handlers.go  /usr/src/evaluation-service/
 
-RUN <<EOF
-    go mod tidy
-    go run .
-EOF
+CMD ["go mod tidy"]
 
+RUN go run .
