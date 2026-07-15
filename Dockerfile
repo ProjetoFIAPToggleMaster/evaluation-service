@@ -1,8 +1,12 @@
-FROM golang:1.26-alpine
+FROM golang:1.21-alpine AS builder
 WORKDIR /usr/src/evaluation-service
-#otimiza o build aproveitando o cache do docker
-#primeiro copia os arquivos de dependências que não costuma mudar
-COPY go* . 
-RUN go mod tidy
+COPY go* .
+RUN go mod download
 COPY . .
-CMD ["go", "run", "."]
+RUN go build -o evaluation-service .
+
+FROM alpine:3.19
+WORKDIR /app
+COPY --from=builder /usr/src/evaluation-service/evaluation-service .
+EXPOSE 8004
+CMD ["./evaluation-service"]
