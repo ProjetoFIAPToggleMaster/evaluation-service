@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"regexp"
 	"sync"
 	"time"
 )
@@ -17,6 +18,16 @@ const (
 	// Tempo de vida do cache em segundos
 	CACHE_TTL = 30 * time.Second
 )
+
+// validFlagNameRe restringe os nomes de flag a um conjunto seguro de caracteres.
+// flagName vem diretamente do query param da requisição (não confiável) e é usado
+// para montar a URL do flag-service/targeting-service; sem essa validação, um
+// atacante poderia injetar segmentos de path/query nessas chamadas (SSRF - CWE-918).
+var validFlagNameRe = regexp.MustCompile(`^[a-zA-Z0-9_.-]{1,128}$`)
+
+func isValidFlagName(name string) bool {
+	return validFlagNameRe.MatchString(name)
+}
 
 // getDecision é o wrapper principal
 func (a *App) getDecision(userID, flagName string) (bool, error) {
@@ -103,13 +114,18 @@ func (a *App) fetchFromServices(flagName string) (*CombinedFlagInfo, error) {
 
 // fetchFlag (função helper)
 func (a *App) fetchFlag(flagName string) (*Flag, error) {
+	if !isValidFlagName(flagName) {
+		return nil, fmt.Errorf("nome de flag inválido: %q", flagName)
+	}
 	url := fmt.Sprintf("%s/flags/%s", a.FlagServiceURL, flagName)
 
 	apiKey := os.Getenv("SERVICE_API_KEY")
+	// #nosec G704 -- flagName é validado por isValidFlagName (allowlist) antes desta chamada;
+	// o host de destino vem de config confiável (FlagServiceURL/TargetingServiceURL), não do request.
 	req, _ := http.NewRequest("GET", url, nil)
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 
-	resp, err := a.HttpClient.Do(req)
+	resp, err := a.HttpClient.Do(req) // #nosec G704 -- flagName validado (isValidFlagName); host vem de config confiável
 	if err != nil {
 		return nil, fmt.Errorf("erro ao chamar flag-service: %w", err)
 	}
@@ -131,12 +147,17 @@ func (a *App) fetchFlag(flagName string) (*Flag, error) {
 }
 
 func (a *App) fetchRule(flagName string) (*TargetingRule, error) {
+	if !isValidFlagName(flagName) {
+		return nil, fmt.Errorf("nome de flag inválido: %q", flagName)
+	}
 	url := fmt.Sprintf("%s/rules/%s", a.TargetingServiceURL, flagName)
 	apiKey := os.Getenv("SERVICE_API_KEY") // Usa a mesma chave
+	// #nosec G704 -- flagName é validado por isValidFlagName (allowlist) antes desta chamada;
+	// o host de destino vem de config confiável (FlagServiceURL/TargetingServiceURL), não do request.
 	req, _ := http.NewRequest("GET", url, nil)
 	req.Header.Set("Authorization", "Bearer "+apiKey)
 
-	resp, err := a.HttpClient.Do(req)
+	resp, err := a.HttpClient.Do(req) // #nosec G704 -- flagName validado (isValidFlagName); host vem de config confiável
 	if err != nil {
 		return nil, fmt.Errorf("erro ao chamar targeting-service: %w", err)
 	}
